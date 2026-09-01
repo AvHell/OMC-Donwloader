@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Editor de Capítulos</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <link rel="stylesheet" href="chapterwindow.css" />
+</head>
+<body>
+  <!-- OVERLAY DE CARGA CON ANIMACIÓN -->
+  <div id="loading-overlay">
+    <div class="loader-container">
+      <div class="loader-spinner">
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+      </div>
+      <p class="loader-text">Descargando audio...</p>
+      <div class="loader-progress">
+        <div class="loader-progress-bar" id="loader-progress-bar" style="width:0%;"></div>
+      </div>
+      <span class="loader-percent" id="loader-percent">0%</span>
+    </div>
+  </div>
+
+  <!-- VENTANA PRINCIPAL -->
+  <div id="editor-container">
+    <!-- HEADER -->
+    <header class="editor-header">
+      <h1><i class="fas fa-scissors" style="color:var(--color-accent);"></i> Editor de Capítulos</h1>
+      <button id="btn-close" title="Cerrar"><i class="fas fa-times"></i></button>
+    </header>
+
+    <!-- REPRODUCTOR -->
+    <section class="player-section">
+      <audio id="audio-player" style="display:none;"></audio>
+      
+      <!-- Barra de progreso -->
+      <div class="progress-container">
+        <div class="progress-bar" id="progress-bar">
+          <div class="progress-fill" id="progress-fill" style="width:0%;"></div>
+          <div class="chapter-markers" id="chapter-markers"></div>
+        </div>
+        <div class="time-display">
+          <span id="current-time">00:00:00</span>
+          <span id="total-duration">00:00:00</span>
+        </div>
+      </div>
+
+      <!-- Controles centrados -->
+      <div class="controls-row">
+        <button id="btn-play" class="btn btn-success"><i class="fas fa-play"></i> Reproducir</button>
+        <button id="btn-pause" class="btn btn-success" style="display:none;"><i class="fas fa-pause"></i> Pausa</button>
+        <button id="btn-mark-start" class="btn btn-secondary"><i class="fas fa-play"></i> Marcar Inicio</button>
+        <button id="btn-mark-end" class="btn btn-secondary"><i class="fas fa-stop"></i> Marcar Fin</button>
+      </div>
+
+      <!-- Inputs manuales con botones + y - -->
+      <div class="manual-inputs">
+        <div class="time-group">
+          <label>Inicio</label>
+          <input type="text" id="manual-start" placeholder="00:00:00" />
+          <div class="time-btn-group">
+            <button class="time-btn" data-target="manual-start" data-dir="1"><i class="fas fa-chevron-up"></i></button>
+            <button class="time-btn" data-target="manual-start" data-dir="-1"><i class="fas fa-chevron-down"></i></button>
+          </div>
+        </div>
+        <div class="time-group">
+          <label>Fin</label>
+          <input type="text" id="manual-end" placeholder="00:00:00" />
+          <div class="time-btn-group">
+            <button class="time-btn" data-target="manual-end" data-dir="1"><i class="fas fa-chevron-up"></i></button>
+            <button class="time-btn" data-target="manual-end" data-dir="-1"><i class="fas fa-chevron-down"></i></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- LISTA DE CAPÍTULOS -->
+    <section class="chapters-section">
+      <div id="chapters-list"></div>
+      <div class="chapters-actions">
+        <button id="btn-add" class="btn btn-secondary"><i class="fas fa-plus"></i> Añadir capítulo</button>
+        <button id="btn-cancel" class="btn btn-secondary">Cancelar</button>
+        <button id="btn-save" class="btn btn-success"><i class="fas fa-save"></i> Guardar</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
