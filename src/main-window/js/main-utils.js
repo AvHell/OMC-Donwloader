@@ -4,9 +4,9 @@
  */
 
 // ============================================================
-//  CONSTANTE PARA THUMBNAIL POR DEFECTO
+//  CONSTANTE PARA THUMBNAIL POR DEFECTO (SVG con diseño musical)
 // ============================================================
-const DEFAULT_THUMBNAIL = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="120" height="68" viewBox="0 0 120 68"%3E%3Crect width="120" height="68" fill="%23222"%3E%3C/rect%3E%3Ctext x="50%25" y="50%25" font-family="Arial" font-size="14" fill="%23666" text-anchor="middle" dy=".3em"%3ENo image%3C/text%3E%3C/svg%3E';
+const DEFAULT_THUMBNAIL = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="120" height="68" viewBox="0 0 120 68"%3E%3Crect width="120" height="68" fill="%231a2a24"%3E%3Crect x="40" y="20" width="40" height="28" rx="4" fill="%2300FF7B" opacity="0.3"%3E%3Cpath d="M52 28 L52 40 L68 34 Z" fill="%2300FF7B" opacity="0.8"%3E%3C/path%3E%3Ctext x="60" y="56" font-family="Arial" font-size="10" fill="%2366ffa3" text-anchor="middle"%3EMusic%3C/text%3E%3C/svg%3E';
 
 // ============================================================
 //  FUNCIONES DE TIEMPO
@@ -74,5 +74,5 @@ window.OMC.utils = {
   parseTime,
   generateId,
   sanitizeFileName,
-  DEFAULT_THUMBNAIL, // <-- EXPORTADO
+  DEFAULT_THUMBNAIL,
 };

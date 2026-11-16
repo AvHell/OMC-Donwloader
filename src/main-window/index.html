@@ -47,53 +47,105 @@
     </div>
   </div>
 
-  <!-- CONTENEDOR PRINCIPAL -->
-  <div class="app-container">
+  <!-- CONTENEDOR PRINCIPAL CON BARRA LATERAL -->
+  <div class="app-wrapper">
 
-    <!-- HEADER (con dos botones) -->
-    <header class="app-header">
-      <div class="header-content">
-        <div class="logo">
-          <i class="fas fa-cloud-download-alt"></i>
-          <span>OMC Downloader</span>
-        </div>
-        <div class="header-actions">
-          <button id="btn-new-link" class="btn btn-primary">
-            <i class="fas fa-plus"></i> Nuevo
-          </button>
-          <button id="btn-start" class="btn btn-success" disabled>
-            <i class="fas fa-play"></i> Descargar
-          </button>
-        </div>
+    <!-- BARRA LATERAL IZQUIERDA -->
+    <nav class="sidebar">
+      <div class="sidebar-logo">
+        <i class="fas fa-cloud-download-alt"></i>
+        <span>OMC</span>
       </div>
-    </header>
-
-    <!-- CUERPO PRINCIPAL (solo la cola) -->
-    <main class="main-card">
-      <section class="logs-section">
-        <div class="logs-header">
-          <span><i class="fas fa-list"></i> Cola de descargas</span>
-          <span id="queue-count">0 elementos</span>
-        </div>
-        <div id="queue-list" class="log-area"></div>
-      </section>
-    </main>
-
-    <!-- FOOTER (solo actualizador) -->
-    <footer class="app-footer">
-      <div class="footer-left">
-        <div class="updater-section">
-          <span id="ytdlp-version" class="version-indicator" title="Versión de yt-dlp">
-            <i class="fas fa-code-branch"></i>
-            <span id="version-text">--</span>
-          </span>
-          <button id="btn-update-ytdlp" class="btn-update" title="Buscar actualizaciones de yt-dlp">
-            <i class="fas fa-sync-alt"></i> Actualizar
+      <ul class="sidebar-menu">
+        <li>
+          <button id="btn-new-link" class="sidebar-btn" title="Nuevo enlace">
+            <i class="fas fa-plus"></i>
+            <span>Nuevo</span>
           </button>
+        </li>
+        <li>
+          <button id="btn-start" class="sidebar-btn" title="Iniciar descargas" disabled>
+            <i class="fas fa-play"></i>
+            <span>Descargar</span>
+          </button>
+        </li>
+        <li>
+          <button id="btn-update-ytdlp" class="sidebar-btn" title="Actualizar yt-dlp">
+            <svg class="updater-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9a7 7 0 0 1 11.6-2L20 12M4 12l2.8 5a7 7 0 0 0 11.6-2"/></svg>
+            <span>Actualizar</span>
+          </button>
+        </li>
+        <li>
+          <button id="btn-toggle-console" class="sidebar-btn" title="Consola de logs">
+            <i class="fas fa-terminal"></i>
+            <span>Consola</span>
+          </button>
+        </li>
+      </ul>
+    </nav>
+
+    <!-- CONTENIDO PRINCIPAL -->
+    <div class="main-content">
+
+      <!-- HEADER (con botón de limpiar en lugar del badge) -->
+      <header class="app-header">
+        <div class="header-content">
+          <div class="logo">
+            <i class="fas fa-cloud-download-alt"></i>
+            <span>OMC Downloader</span>
+          </div>
+          <div class="header-actions">
+            <button id="btn-clear-queue" class="btn btn-secondary" disabled style="padding:6px 16px; font-size:var(--font-size-body); border-radius:8px; gap:6px;">
+              <i class="fas fa-trash-alt"></i> Limpiar cola
+            </button>
+          </div>
         </div>
+      </header>
+
+      <!-- CUERPO PRINCIPAL (cola) -->
+      <main class="main-card">
+        <section class="logs-section">
+          <div class="logs-header">
+            <span><i class="fas fa-list"></i> Cola de descargas</span>
+            <span id="queue-count">0 elementos</span>
+          </div>
+          <div id="queue-list" class="log-area"></div>
+        </section>
+      </main>
+
+      <!-- FOOTER (actualizador) -->
+      <footer class="app-footer">
+        <div class="footer-left">
+          <div class="updater-section">
+            <span id="app-update-status" class="app-update-status">Actualización de app sin comprobar</span>
+            <button id="btn-update-app" class="btn btn-secondary" type="button">
+              <svg class="updater-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5"/><path d="M4 17v3h16v-3"/></svg> Buscar actualización
+            </button>
+          </div>
+        </div>
+        <span class="footer-copy">OMC Downloader v1.0</span>
+      </footer>
+
+    </div>
+  </div>
+
+  <!-- PANEL DE CONSOLA (se muestra/oculta con el botón) -->
+  <div id="console-panel">
+    <div class="console-header">
+      <div class="console-heading">
+        <span class="console-session-brand"><svg id="console-session-logo-fallback" class="console-session-logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 28 10v12l-12 7L4 22V10z"/><path d="m11 13 4 3-4 3m7 0h4"/></svg><img id="console-session-art" class="console-session-art" alt="" hidden> Sesión de descarga</span>
+        <span id="console-session-title" class="console-session-title">Sin descargas activas</span>
+        <span id="console-session-id" class="console-session-id">En espera</span>
+        <span id="console-log-count" class="console-log-count">0 eventos</span>
       </div>
-      <span class="footer-copy">OMC Downloader v1.0</span>
-    </footer>
+      <button id="btn-close-console" class="btn-icon" title="Cerrar consola">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    <div id="console-output" class="console-output"></div>
+    <div class="console-actions">
+      <button id="btn-clear-console" class="btn btn-secondary">Limpiar</button>
+    </div>
   </div>
 
   <!-- MODAL GLOBAL (para agregar/editar) -->

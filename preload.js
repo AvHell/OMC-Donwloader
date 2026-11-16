@@ -5,6 +5,11 @@ const { contextBridge, ipcRenderer } = require('electron');
  * Todos los métodos son seguros y están aislados por contexto
  */
 contextBridge.exposeInMainWorld('api', {
+  downloadSession: {
+    start: (sessionId) => ipcRenderer.invoke('download-session:start', sessionId),
+    end: (sessionId) => ipcRenderer.invoke('download-session:end', sessionId),
+  },
+
   // ===== CONFIGURACIÓN =====
   settings: {
     get: (key) => ipcRenderer.invoke('settings:get', key),
@@ -20,14 +25,14 @@ contextBridge.exposeInMainWorld('api', {
   // ===== YT-DLP (descargas y metadatos) =====
   ytdlp: {
     getMetadata: (url) => ipcRenderer.invoke('ytdlp:getMetadata', url),
-    download: (item, outputFolder, onProgress) => {
+    download: (item, outputFolder, onProgress, sessionId) => {
       const listener = (event, data) => {
         if (data.id === item.id && typeof onProgress === 'function') {
           onProgress(data.progress, data.status);
         }
       };
       ipcRenderer.on('download-progress', listener);
-      return ipcRenderer.invoke('ytdlp:download', item, outputFolder)
+      return ipcRenderer.invoke('ytdlp:download', item, outputFolder, sessionId)
         .then((result) => result)
         .finally(() => ipcRenderer.removeListener('download-progress', listener));
     },
@@ -88,6 +93,17 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
 
+  appUpdater: {
+    getStatus: () => ipcRenderer.invoke('app-updater:getStatus'),
+    check: () => ipcRenderer.invoke('app-updater:check'),
+    install: () => ipcRenderer.invoke('app-updater:install'),
+    onStatus: (callback) => {
+      ipcRenderer.on('app-updater:status', (event, status) => {
+        if (typeof callback === 'function') callback(status);
+      });
+    },
+  },
+
   // ===== NUEVO: Descargar audio temporal (para el editor) =====
   downloadAudio: (url) => ipcRenderer.invoke('downloadAudio', url),
 
@@ -102,6 +118,7 @@ contextBridge.exposeInMainWorld('api', {
       'updater-progress',
       'updater-complete',
       'updater-error',
+      'log-message', // <-- NUEVO: para logs en vivo
     ];
     if (valid.includes(channel)) {
       ipcRenderer.on(channel, (event, ...args) => callback(...args));
@@ -110,7 +127,11 @@ contextBridge.exposeInMainWorld('api', {
 
   // ===== ENVÍO DE EVENTOS (hacia main) =====
   send: (channel, data) => {
-    const valid = ['editor:save', 'editor:cancel'];
+    const valid = [
+      'editor:save',
+      'editor:cancel',
+      'log-message', // <-- NUEVO: para enviar logs al main
+    ];
     if (valid.includes(channel)) {
       ipcRenderer.send(channel, data);
     }

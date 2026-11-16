@@ -1,12 +1,13 @@
 {
   "name": "omcdownloader",
-  "version": "1.0.0",
-  "description": "OMC Music Downloader - Electron",
+  "version": "2.0.0",
+  "description": "OMC Music Downloader",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder",
-    "dist": "electron-builder --win --x64"
+    "build": "electron-builder --config electron-builder.config.js",
+    "dist": "electron-builder --config electron-builder.config.js --win --x64",
+    "release": "electron-builder --config electron-builder.config.js --win --x64 --publish always"
   },
   "build": {
     "appId": "com.omcdownloader.app",
@@ -31,7 +32,8 @@
     "electron-store": "^8.1.0",
     "fs-extra": "^11.2.0",
     "music-metadata": "^10.0.0",
-    "node-id3": "^0.2.0"
+    "node-id3": "^0.2.0",
+    "electron-updater": "^6.6.2"
   },
   "devDependencies": {
     "electron": "^33.0.0",

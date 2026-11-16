@@ -90,31 +90,20 @@ function parseChaptersFromText(text, totalDuration, limit = 0) {
   const chapters = [];
   if (!text) return chapters;
 
-  const regex = /(?:^|\n|\r\n?)\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*[-–—]?\s*([^\n]+)/g;
+  const regex = /^\s*(?:(\d{1,3}):)?(\d{1,2}):(\d{2})\s*[-–—]?\s*(.+?)\s*$/gm;
   let match;
   const matches = [];
 
   while ((match = regex.exec(text)) !== null) {
-    let start = 0;
-    let title = match[4].trim();
+    const hours = Number(match[1] || 0);
+    const minutes = Number(match[2]);
+    const seconds = Number(match[3]);
+    const title = match[4].trim();
+    if (minutes >= 60 || seconds >= 60 || !title) continue;
 
-    if (match[3] !== undefined) {
-      // Tiene tres grupos -> HH:MM:SS
-      const hours = parseInt(match[1], 10);
-      const minutes = parseInt(match[2], 10);
-      const seconds = parseInt(match[3], 10);
-      start = hours * 3600 + minutes * 60 + seconds;
-    } else {
-      // Tiene dos grupos -> MM:SS
-      const minutes = parseInt(match[1], 10);
-      const seconds = parseInt(match[2], 10);
-      start = minutes * 60 + seconds;
-    }
-
-    if (start < 0 || (totalDuration > 0 && start >= totalDuration)) continue;
-    if (title && start >= 0) {
-      matches.push({ start, title, end: 0 });
-    }
+    const start = hours * 3600 + minutes * 60 + seconds;
+    if (totalDuration > 0 && start >= totalDuration) continue;
+    matches.push({ start, title, end: 0 });
   }
 
   if (matches.length === 0) return chapters;
@@ -148,14 +137,40 @@ function parseChaptersFromText(text, totalDuration, limit = 0) {
   }));
 }
 
+function parseSupportedUrl(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch (err) {
+    throw new Error('Enlace inválido. Usa una URL completa de YouTube o Bandcamp.');
+  }
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    throw new Error('Solo se aceptan enlaces web HTTP o HTTPS.');
+  }
+
+  const host = url.hostname.toLowerCase();
+  if (host === 'spotify.com' || host.endsWith('.spotify.com')) {
+    throw new Error('Los enlaces de Spotify no se procesan en esta versión.');
+  }
+  if (
+    host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtu.be' ||
+    host === 'bandcamp.com' || host.endsWith('.bandcamp.com')
+  ) return url;
+  throw new Error('Enlace no compatible. Usa YouTube o Bandcamp.');
+}
+
 // ============================================================
 // getMetadata (sin comentarios)
 // ============================================================
 async function getMetadata(url) {
   if (!url || !url.trim()) throw new Error('❌ URL vacía o inválida');
+  const parsedUrl = parseSupportedUrl(url.trim());
   log(`🔍 Obteniendo metadatos para: ${url}`);
 
-  const isPlaylistUrl = url.includes('list=') && !url.includes('watch?v=');
+  const isBandcampAlbum =
+    (parsedUrl.hostname === 'bandcamp.com' || parsedUrl.hostname.endsWith('.bandcamp.com')) &&
+    /\/album\//i.test(parsedUrl.pathname);
+  const isPlaylistUrl = (url.includes('list=') && !url.includes('watch?v=')) || isBandcampAlbum;
   const args = ['-J', '--encoding', 'utf-8', '--js-runtimes', 'deno', '--ignore-errors'];
   if (!isPlaylistUrl) {
     args.push('--no-playlist');
@@ -211,10 +226,14 @@ async function getMetadata(url) {
       try {
         const result = {
           title: json.title || 'Título no disponible',
-          artist: json.uploader || 'Artista desconocido',
+          artist: json.artist || json.uploader || json.creator || json.channel || 'Artista desconocido',
           duration: json.duration_string || (json.duration ? formatDuration(json.duration) : '0:00'),
           description: json.description || '',
-          thumbnailUrl: json.thumbnail || 'https://img.youtube.com/vi/default.jpg',
+          thumbnailUrl: json.thumbnail ||
+            (Array.isArray(json.thumbnails) && json.thumbnails.length
+              ? json.thumbnails[json.thumbnails.length - 1].url
+              : '') ||
+            'https://img.youtube.com/vi/default.jpg',
           chapters: [],
           isPlaylist: false,
           entries: [],
@@ -224,25 +243,52 @@ async function getMetadata(url) {
           result.isPlaylist = true;
           result.entries = json.entries.map(entry => ({
             title: entry.title || 'Pista sin título',
-            url: entry.url || (entry.id ? `https://www.youtube.com/watch?v=${entry.id}` : ''),
+            url: entry.webpage_url || entry.original_url || entry.url ||
+              (entry.id ? `https://www.youtube.com/watch?v=${entry.id}` : ''),
             duration: entry.duration_string || (entry.duration ? formatDuration(entry.duration) : '0:00'),
-            thumbnail: entry.thumbnail || '',
+            thumbnail: entry.thumbnail ||
+              (Array.isArray(entry.thumbnails) && entry.thumbnails.length
+                ? entry.thumbnails[entry.thumbnails.length - 1].url
+                : ''),
+            artist: entry.artist || entry.uploader || entry.creator || '',
           }));
           result.title = json.title || 'Playlist';
-          result.artist = json.uploader || 'Varios Artistas';
+          result.artist = json.artist || json.uploader || 'Varios Artistas';
           result.duration = '--:--';
         } else {
           let chapters = [];
           let totalDuration = json.duration || 0;
 
           if (json.chapters && Array.isArray(json.chapters) && json.chapters.length > 0) {
-            chapters = json.chapters.map((ch) => ({
-              title: ch.title || 'Capítulo',
-              start: ch.start_time || 0,
-              end: ch.end_time || 0,
-              isSelected: true,
-              videoUrl: '',
-            }));
+            const nativeChapters = json.chapters
+              .map(ch => ({
+                title: String(ch.title || '').trim(),
+                start: Number(ch.start_time),
+                end: Number(ch.end_time),
+              }))
+              .filter(ch =>
+                ch.title &&
+                Number.isFinite(ch.start) &&
+                ch.start >= 0 &&
+                (!totalDuration || ch.start < totalDuration)
+              )
+              .sort((a, b) => a.start - b.start);
+            chapters = nativeChapters
+              .filter((chapter, index) => index === 0 || chapter.start > nativeChapters[index - 1].start)
+              .map((chapter, index, list) => {
+                const nextStart = list[index + 1]?.start;
+                const chapterEnd = Number.isFinite(chapter.end) && chapter.end > chapter.start
+                  ? chapter.end
+                  : nextStart || totalDuration;
+                const end = nextStart ? Math.min(chapterEnd, nextStart) : chapterEnd;
+                return {
+                  title: chapter.title,
+                  start: chapter.start,
+                  end: totalDuration ? Math.min(end, totalDuration) : end,
+                  isSelected: true,
+                  videoUrl: '',
+                };
+              });
             log(`📥 ${chapters.length} capítulos nativos encontrados`);
           } else {
             const fromDesc = parseChaptersFromText(result.description, totalDuration, 0);
@@ -268,10 +314,11 @@ async function getMetadata(url) {
 }
 
 // ============================================================
-// download (sin cambios)
+// Normalizar las descargas al formato MP3 para garantizar compatibilidad.
 // ============================================================
 async function download(item, outputFolder, onProgress) {
   if (!item || !item.url) throw new Error('❌ Item inválido: falta URL');
+  parseSupportedUrl(item.url);
   if (!outputFolder || !fs.existsSync(outputFolder)) throw new Error(`❌ Carpeta destino no existe: ${outputFolder}`);
   if (!item.id) item.id = generateId();
 
@@ -284,8 +331,8 @@ async function download(item, outputFolder, onProgress) {
 
   const guid = Math.random().toString(36).substring(2, 10);
   const baseTempName = `temp_${guid}`;
-  const extension = item.format === 'MP3' ? 'mp3' : 'flac';
-  const audioTempPath = path.join(outputFolder, `${baseTempName}.${extension}`);
+  let audioTempPath = '';
+  let extension = '';
 
   log(`🚀 Iniciando descarga ID: ${guid}, URL: ${item.url}`);
 
@@ -308,7 +355,7 @@ async function download(item, outputFolder, onProgress) {
 
   const hasListParam = item.url.includes('list=');
   const isRealPlaylist = hasListParam && !(item.splitChapters && selectedChapters.length > 0);
-  const isPlaylist = isRealPlaylist || selectedChapters.some(c => c.videoUrl);
+  const isPlaylist = item.isPlaylist || isRealPlaylist || selectedChapters.some(c => c.videoUrl);
   const isSingleSplit = !isPlaylist && item.splitChapters && selectedChapters.length > 0;
 
   log(`🔍 isPlaylist: ${isPlaylist}`);
@@ -345,29 +392,19 @@ async function download(item, outputFolder, onProgress) {
 
       const trackGuid = generateId();
       const trackTempName = `temp_${trackGuid}`;
-      const trackTempPath = path.join(albumFolder, `${trackTempName}.${extension}`);
       const finalVideoUrl = entry.url || item.url;
-      const audioFormat = extension;
-      const audioQuality = item.format === 'MP3' ? '320k' : '0';
+      let trackTempPath;
 
-      const args = [
-        '--no-check-certificate', '--no-playlist', '--encoding', 'utf-8', '-x',
-        `--audio-format=${audioFormat}`, `--audio-quality=${audioQuality}`,
-        `--ffmpeg-location=${ffmpegPath}`,
-        '--js-runtimes', 'deno',
-        '--ignore-errors',
-        '--newline', '--force-overwrites', '--no-mtime',
-        '--write-thumbnail', '--convert-thumbnails', 'jpg', '--no-embed-thumbnail',
-        '-o', trackTempPath, finalVideoUrl,
-      ];
-
-      try { await runYtDlp(args); } catch (err) {
+      try {
+        trackTempPath = await downloadBestAudio(finalVideoUrl, albumFolder, trackTempName);
+      } catch (err) {
         log(`❌ Error descargando pista ${trackNum}: ${err.message}`);
         trackNum++;
         continue;
       }
 
-      const tempImages = fs.readdirSync(albumFolder).filter(f => f.startsWith(trackTempName) && !f.endsWith(`.${extension}`));
+      const trackExtension = path.extname(trackTempPath).slice(1).toLowerCase();
+      const tempImages = findImages(albumFolder, trackTempName);
       let imagePath = null;
       if (tempImages.length > 0) {
         imagePath = path.join(albumFolder, tempImages[0]);
@@ -380,7 +417,7 @@ async function download(item, outputFolder, onProgress) {
       }
 
       const safeChapterTitle = sanitizeFileName(trackTitle);
-      const finalTrackFile = path.join(albumFolder, `${trackNum.toString().padStart(2, '0')} - ${safeChapterTitle}.${extension}`);
+      const finalTrackFile = path.join(albumFolder, `${trackNum.toString().padStart(2, '0')} - ${safeChapterTitle}.${trackExtension}`);
       if (fs.existsSync(trackTempPath)) fs.moveSync(trackTempPath, finalTrackFile, { overwrite: true });
       else { log(`⚠️ Archivo temporal no encontrado: ${trackTempPath}`); trackNum++; continue; }
 
@@ -395,9 +432,14 @@ async function download(item, outputFolder, onProgress) {
         collaborator: entry.artist || item.artist || '',
         trackNumber: `${trackNum}/${totalTracks}`,
       };
-      await applyTags(finalTrackFile, albumInfo, trackInfo, imagePath || item.customCoverPath);
+      const coverPath = item.customCoverPath && fs.existsSync(item.customCoverPath)
+        ? item.customCoverPath
+        : imagePath;
+      await applyTags(finalTrackFile, albumInfo, trackInfo, coverPath);
 
       for (const img of tempImages) fs.removeSync(path.join(albumFolder, img));
+      const squareImage = path.join(albumFolder, `${trackTempName}_square.jpg`);
+      if (fs.existsSync(squareImage)) fs.removeSync(squareImage);
       trackNum++;
     }
 
@@ -407,21 +449,10 @@ async function download(item, outputFolder, onProgress) {
 
   // 2. VIDEO ÚNICO
   log('🎬 Descargando video único...');
-  const audioFormat = extension;
-  const audioQuality = item.format === 'MP3' ? '320k' : '0';
-
-  const args = [
-    '--no-check-certificate', '--no-playlist', '--encoding', 'utf-8', '-x',
-    `--audio-format=${audioFormat}`, `--audio-quality=${audioQuality}`,
-    `--ffmpeg-location=${ffmpegPath}`,
-    '--js-runtimes', 'deno',
-    '--ignore-errors',
-    '--newline', '--force-overwrites', '--no-mtime',
-    '--write-thumbnail', '--convert-thumbnails', 'jpg', '--no-embed-thumbnail',
-    '-o', audioTempPath, item.url,
-  ];
-
-  try { await runYtDlp(args); } catch (err) {
+  try {
+    audioTempPath = await downloadBestAudio(item.url, outputFolder, baseTempName);
+    extension = path.extname(audioTempPath).slice(1).toLowerCase();
+  } catch (err) {
     log(`❌ Error en descarga: ${err.message}`);
     throw new Error(`Fallo la descarga: ${err.message}`);
   }
@@ -431,7 +462,7 @@ async function download(item, outputFolder, onProgress) {
     throw new Error('Archivo de audio temporal no encontrado');
   }
 
-  const tempImages = fs.readdirSync(outputFolder).filter(f => f.startsWith(baseTempName) && !f.endsWith(`.${extension}`));
+  const tempImages = findImages(outputFolder, baseTempName);
   let imagePath = null;
   if (tempImages.length > 0) {
     imagePath = path.join(outputFolder, tempImages[0]);
@@ -477,7 +508,9 @@ async function download(item, outputFolder, onProgress) {
     }
 
     fs.removeSync(audioTempPath);
-    if (tempImages.length > 0 && !item.customCoverPath) fs.removeSync(imagePath);
+    for (const image of tempImages) fs.removeSync(path.join(outputFolder, image));
+    const squareImage = path.join(outputFolder, `${baseTempName}_square.jpg`);
+    if (fs.existsSync(squareImage)) fs.removeSync(squareImage);
     onProgress(100, 'Pistas extraídas ✔');
     return { finalPath: albumFolder };
   }
@@ -489,13 +522,53 @@ async function download(item, outputFolder, onProgress) {
   else throw new Error('Archivo de audio temporal no encontrado');
 
   await applyTags(finalPath, albumInfo, trackInfo, imagePath);
-  if (tempImages.length > 0 && !item.customCoverPath) fs.removeSync(imagePath);
+  for (const image of tempImages) fs.removeSync(path.join(outputFolder, image));
+  const squareImage = path.join(outputFolder, `${baseTempName}_square.jpg`);
+  if (fs.existsSync(squareImage)) fs.removeSync(squareImage);
 
   onProgress(100, 'Completado ✔');
   return { finalPath };
 }
 
 // --- Funciones auxiliares ---
+const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+
+async function downloadBestAudio(url, outputFolder, filePrefix, includeThumbnail = true) {
+  const outputTemplate = path.join(outputFolder, `${filePrefix}.%(ext)s`);
+  const args = [
+    '--no-check-certificate', '--no-playlist', '--encoding', 'utf-8', '-f', 'bestaudio/best',
+    '-x', '--audio-format', 'mp3', '--audio-quality', '320k',
+    `--ffmpeg-location=${ffmpegPath}`,
+    '--js-runtimes', 'deno',
+    '--ignore-errors',
+    '--newline', '--force-overwrites', '--no-mtime',
+  ];
+  if (includeThumbnail) {
+    args.push('--write-thumbnail', '--convert-thumbnails', 'jpg', '--no-embed-thumbnail');
+  }
+  args.push('-o', outputTemplate, url);
+  await runYtDlp(args);
+
+  const audioPath = fs.readdirSync(outputFolder)
+    .filter(name => name.startsWith(`${filePrefix}.`))
+    .map(name => path.join(outputFolder, name))
+    .find(filePath => path.extname(filePath).toLowerCase() === '.mp3');
+  if (!audioPath) {
+    throw new Error(`yt-dlp no generó el archivo MP3 esperado para: ${url}`);
+  }
+  return audioPath;
+}
+
+async function downloadAudioForEditor(url, outputFolder, filePrefix) {
+  parseSupportedUrl(url);
+  return downloadBestAudio(url, outputFolder, filePrefix, false);
+}
+
+function findImages(folder, filePrefix) {
+  return fs.readdirSync(folder)
+    .filter(name => name.startsWith(`${filePrefix}.`) && IMAGE_EXTENSIONS.has(path.extname(name).toLowerCase()));
+}
+
 function runYtDlp(args) {
   return new Promise((resolve, reject) => {
     const proc = spawn(ytDlpPath, args, { env: { PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' } });
@@ -532,10 +605,8 @@ async function splitChapters(sourceFile, chapters, destFolder, item, coverPath, 
   }
 
   const sorted = chapters.slice().sort((a, b) => a.start - b.start);
-  log(`📂 Procesando ${sorted.length} capítulos en formato ${extension.toUpperCase()}...`);
+  log(`📂 Procesando ${sorted.length} capítulos en formato MP3...`);
   
-  const isMp3 = extension === 'mp3';
-
   for (let i = 0; i < sorted.length; i++) {
     const cap = sorted[i];
     const start = cap.start;
@@ -559,11 +630,8 @@ async function splitChapters(sourceFile, chapters, destFolder, item, coverPath, 
       '-ss', formatTime(start),
       '-i', sourceFile,
       '-t', formatTime(duration),
-      '-c:a', isMp3 ? 'libmp3lame' : 'flac',
+      '-c:a', 'copy',
     ];
-    if (isMp3) {
-      cutArgs.push('-b:a', '320k');
-    }
     cutArgs.push('-y', tempAudio);
 
     await runFfmpeg(cutArgs);
@@ -572,40 +640,20 @@ async function splitChapters(sourceFile, chapters, destFolder, item, coverPath, 
       throw new Error(`Error al recortar el capítulo ${trackNum}: archivo temporal vacío`);
     }
 
-    let finalArgs = ['-i', tempAudio];
-
-    if (coverPath && fs.existsSync(coverPath) && isMp3) {
-      finalArgs.push('-i', coverPath);
-      finalArgs.push('-map', '0:a:0');
-      finalArgs.push('-map', '1:0');
-      finalArgs.push('-c:v', 'mjpeg');
-      finalArgs.push('-id3v2_version', '3');
-    } else {
-      finalArgs.push('-map', '0:a');
-    }
-
-    finalArgs.push('-c:a', 'copy');
-
-    const meta = {
-      title: cap.title || `Pista ${trackNum}`,
-      artist: cap.collaborator || item.artist || '',
-      album: item.album || item.title || 'Álbum',
-      album_artist: item.albumArtist || item.artist || '',
-      date: item.year || '',
-      genre: item.genre || '',
-      track: `${trackNum}/${sorted.length}`,
-    };
-    for (const [key, val] of Object.entries(meta)) {
-      if (val) finalArgs.push('-metadata', `${key}=${val}`);
-    }
-
-    finalArgs.push('-y', outFile);
-
-    await runFfmpeg(finalArgs);
-
+    fs.moveSync(tempAudio, outFile, { overwrite: true });
     fs.removeSync(tempAudio);
 
     if (fs.existsSync(outFile) && fs.statSync(outFile).size > 0) {
+      await applyTags(outFile, {
+        album: item.album || item.title || 'Álbum',
+        albumArtist: item.albumArtist || item.artist || '',
+        year: item.year || '',
+        genre: item.genre || '',
+      }, {
+        title: cap.title || `Pista ${trackNum}`,
+        collaborator: cap.collaborator || item.artist || '',
+        trackNumber: `${trackNum}/${sorted.length}`,
+      }, coverPath);
       log(`✅ Capítulo ${trackNum} guardado: ${path.basename(outFile)} (${formatTime(duration)})`);
     } else {
       log(`⚠️ Capítulo ${trackNum} no se creó correctamente`);
@@ -621,6 +669,7 @@ async function applyTags(filePath, albumInfo, trackInfo, coverPath) {
     await applyMetadata(filePath, albumInfo, trackInfo, coverPath);
   } catch (err) {
     log(`⚠️ Error al aplicar metadatos: ${err.message}`);
+    throw err;
   }
 }
 
@@ -628,6 +677,7 @@ async function applyTags(filePath, albumInfo, trackInfo, coverPath) {
 module.exports = {
   getMetadata,
   download,
+  downloadAudioForEditor,
   refreshPaths,
   getBinaryPaths,
 };

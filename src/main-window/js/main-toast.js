@@ -1,8 +1,8 @@
 /**
  * main-toast.js
  * Sistema de notificaciones con SweetAlert2 (estilo mejorado)
- * - Botones con contraste y hover
- * - Z-index alto para toasts
+ * - Mensajes de error más amigables
+ * - Z-index alto para que aparezca sobre modales
  */
 
 const Toast = (() => {
@@ -36,13 +36,12 @@ const Toast = (() => {
       text,
       icon: 'question',
       showCancelButton: true,
-      confirmButtonColor: '#00FF7B',
+      confirmButtonColor: '#04ac04',
       cancelButtonColor: 'rgba(255,255,255,0.2)',
       confirmButtonText: confirmText,
       cancelButtonText: cancelText,
       background: 'var(--color-background)',
       color: 'var(--color-text)',
-      // Estilos adicionales para botones
       customClass: {
         confirmButton: 'swal2-confirm',
         cancelButton: 'swal2-cancel',
@@ -51,11 +50,12 @@ const Toast = (() => {
   }
 
   function error(title, text) {
+    const friendlyMsg = text || 'Ha ocurrido un error. Revisa los logs en la consola para más detalles.';
     return Swal.fire({
       icon: 'error',
-      title,
-      text,
-      confirmButtonColor: '#00FF7B',
+      title: title || 'Error',
+      text: friendlyMsg,
+      confirmButtonColor: '#06d817',
       background: 'var(--color-background)',
       color: 'var(--color-text)',
       confirmButtonText: 'OK',

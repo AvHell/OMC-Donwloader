@@ -5,6 +5,16 @@ const { log } = require('./logger');
 // Usamos node-id3 para MP3 (más confiable para escribir)
 const NodeID3 = require('node-id3');
 
+function getFfmpegPath() {
+  const fileName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+  const packagedPath = process.resourcesPath
+    ? path.join(process.resourcesPath, 'tools', fileName)
+    : '';
+  return packagedPath && fs.existsSync(packagedPath)
+    ? packagedPath
+    : path.join(__dirname, '..', 'tools', fileName);
+}
+
 async function applyMetadata(filePath, albumInfo, trackInfo, coverPath) {
   try {
     if (!filePath || !fs.existsSync(filePath)) {
@@ -80,40 +90,67 @@ async function applyMetadata(filePath, albumInfo, trackInfo, coverPath) {
       if (result) {
         log(`✅ Metadatos aplicados correctamente a ${filePath}`);
       } else {
-        log(`⚠️ No se pudieron escribir metadatos en ${filePath}`);
-      }
-    } else if (ext === '.flac') {
-      // Para FLAC, podríamos usar music-metadata o ffmpeg
-      log(`⚠️ FLAC no soportado completamente. Usando ffmpeg para metadatos...`);
-      // Usar ffmpeg para FLAC (comando alternativo)
-      const { spawn } = require('child_process');
-      const ffmpegPath = path.join(__dirname, '..', 'tools', 'ffmpeg.exe');
-
-      if (!fs.existsSync(ffmpegPath)) {
-        log(`⚠️ ffmpeg no encontrado, no se pueden escribir metadatos FLAC`);
-        return;
-      }
-
-      const metaArgs = [
-        '-i', filePath,
-        '-c', 'copy',
-        '-metadata', `title=${trackInfo.title || ''}`,
-        '-metadata', `artist=${trackInfo.collaborator || ''}`,
-        '-metadata', `album=${albumInfo.album || ''}`,
-        '-metadata', `album_artist=${albumInfo.albumArtist || ''}`,
-        '-metadata', `date=${albumInfo.year || ''}`,
-        '-metadata', `genre=${albumInfo.genre || ''}`,
-        '-metadata', `track=${trackInfo.trackNumber || ''}`,
-        '-y', filePath + '.temp.flac'
-      ];
-
-      await runFfmpeg(ffmpegPath, metaArgs);
-      if (fs.existsSync(filePath + '.temp.flac')) {
-        fs.moveSync(filePath + '.temp.flac', filePath, { overwrite: true });
-        log(`✅ Metadatos FLAC aplicados`);
+        throw new Error(`node-id3 no pudo escribir los metadatos en ${filePath}`);
       }
     } else {
-      log(`⚠️ Formato no soportado para metadatos: ${ext}`);
+      const ffmpegPath = getFfmpegPath();
+      if (!fs.existsSync(ffmpegPath)) {
+        throw new Error(`ffmpeg no encontrado: ${ffmpegPath}`);
+      }
+
+      const tempPath = path.join(
+        path.dirname(filePath),
+        `${path.basename(filePath, ext)}.tagged${ext}`
+      );
+      const metadata = {
+        title: trackInfo.title || '',
+        artist: trackInfo.collaborator || '',
+        album: albumInfo.album || '',
+        album_artist: albumInfo.albumArtist || '',
+        date: albumInfo.year || '',
+        genre: albumInfo.genre || '',
+        track: trackInfo.trackNumber || '',
+      };
+      const coverExists = coverPath && fs.existsSync(coverPath);
+      const canEmbedCover = ['.flac', '.m4a', '.oga', '.ogg', '.opus'].includes(ext);
+      let coverEmbedded = false;
+
+      const writeWithCover = async includeCover => {
+        const args = ['-i', filePath, '-map', '0:a:0'];
+        if (includeCover) {
+          args.push('-i', coverPath, '-map', '1:v:0', '-c:v', 'mjpeg', '-disposition:v:0', 'attached_pic');
+        }
+        args.push('-c:a', 'copy');
+        for (const [key, value] of Object.entries(metadata)) {
+          if (value) args.push('-metadata', `${key}=${value}`);
+        }
+        args.push('-y', tempPath);
+        await runFfmpeg(ffmpegPath, args);
+      };
+
+      try {
+        if (coverExists && canEmbedCover) {
+          try {
+            await writeWithCover(true);
+            coverEmbedded = true;
+          } catch (error) {
+            if (fs.existsSync(tempPath)) fs.removeSync(tempPath);
+            log(`⚠️ No se pudo incrustar la portada; se aplicarán los metadatos sin imagen: ${error.message}`);
+            await writeWithCover(false);
+          }
+        } else {
+          await writeWithCover(false);
+        }
+        if (!fs.existsSync(tempPath)) throw new Error('ffmpeg no generó el archivo con metadatos');
+        fs.moveSync(tempPath, filePath, { overwrite: true });
+        if (coverExists && !coverEmbedded) {
+          log(`⚠️ El formato ${ext} no admite incrustar la portada; no se creó un archivo de imagen separado.`);
+        }
+        log(`✅ Metadatos aplicados a ${path.basename(filePath)}`);
+      } catch (err) {
+        if (fs.existsSync(tempPath)) fs.removeSync(tempPath);
+        throw err;
+      }
     }
 
   } catch (err) {
